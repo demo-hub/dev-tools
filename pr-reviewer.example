@@ -1,0 +1,15 @@
+# .pr-reviewer — config for pr-reviewer.mjs
+# Copy this file to .pr-reviewer and fill in your values.
+# This file is .gitignored — never commit it.
+
+# GitHub Personal Access Token
+# Required scope: repo (full)
+# https://github.com/settings/tokens
+GH_TOKEN=
+
+# Your GitHub username (used to filter review requests)
+GH_USER=
+
+# Optional: comma-separated list of repos to filter (leave blank for all)
+# Example: UniversoOrg/app-universo-backend,UniversoOrg/app-universo-mobile
+REPOS=

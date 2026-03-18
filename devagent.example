@@ -1,0 +1,21 @@
+# .devagent — config for agent.mjs and refine.mjs
+# Copy this file to .devagent and fill in your values.
+# This file is .gitignored — never commit it.
+
+ADO_ORG=SFS-IT
+ADO_PROJECT=SFSCore
+ADO_TEAM=IT Channels
+
+# Personal Access Token
+# Required scopes: Work Items (Read & Write), Code (Read)
+# https://dev.azure.com/SFS-IT/_usersSettings/tokens
+ADO_PAT=
+
+# Stack description injected into agent prompts
+ADO_STACK=.NET 8, React Native, Azure
+
+# Base branch for new feature branches
+ADO_BASE_BRANCH=main
+
+# Max Claude Code retry attempts on test failure
+ADO_MAX_RETRY=2
