@@ -1,0 +1,26 @@
+# Credentials — never commit these
+.devagent
+.pr-reviewer
+
+# Refinement output reports
+refine/refine-*.md
+refine/*.md
+
+# CAB generated docs
+cab-gen/*.md
+cab-gen/*.html
+
+# Temp files written by the tools
+.devagent-prompt.md
+.pr-reviewer-prompt.md
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/settings.json
+.idea/
+
+# Node (in case anyone adds deps later)
+node_modules/
