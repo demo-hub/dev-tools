@@ -4,10 +4,10 @@
 
 # Refinement output reports
 refine/refine-*.md
-refine/*.md
 
 # CAB generated docs
-cab-gen/*.md
+cab-gen/cab-*.md
+cab-gen/release-notes-*.md
 cab-gen/*.html
 
 # Temp files written by the tools
