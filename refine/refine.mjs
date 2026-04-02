@@ -22,6 +22,7 @@
 
 import fs from "fs";
 import path from "path";
+import { generateViaCLI } from "../lib/claude-invoke.mjs";
 
 // ---------------------------------------------------------------------------
 // .devagent config reader
@@ -484,42 +485,6 @@ Rules:
 - If the PBI is a Bug, skip "Suggested Acceptance Criteria" and "Development Plan"; focus on reproduction quality, root cause hypotheses, and fix tasks
 - Do not repeat the PBI title or description back verbatim — reference it, don't copy it
 - If something looks good, say so briefly — don't pad with praise`;
-  return `You are a senior product manager and tech lead helping prepare PBIs for sprint refinement.
-
-For each PBI provided, produce a structured refinement report in markdown with these exact sections:
-
-### DoR Assessment
-
-A qualitative assessment of the criteria that require human judgment (AC quality, happy path, edge cases, error handling, personas, dependencies). Be specific — quote or reference the actual AC text. Flag exactly what is missing or unclear.
-
-### Gaps to Address
-
-A numbered list of concrete actions the PO or team must take before this PBI is ready for refinement. Each gap should be actionable: "Add AC covering the error state when X fails" not "improve AC".
-
-### Suggested Acceptance Criteria
-
-Only if AC is missing or clearly incomplete. Write in Given/When/Then or clear declarative format. Cover happy path, edge cases, negative scenarios, and error handling based on what you can infer from the description. Mark assumptions with *(assumption)*.
-
-### Development Plan
-
-A realistic technical breakdown based on the actual source files provided. Reference specific files, classes, components, or patterns you can see in the code. Include:
-- Which repos and files are affected
-- Where exactly the change lands (file, class, method level if visible)
-- Suggested implementation approach referencing existing patterns in the code
-- Risks or unknowns to clarify before starting
-
-### Suggested Tasks
-
-A flat list of concrete development tasks ready to create as ADO child items. Format each as:
-\`[ ] Task title — brief description\`
-
----
-
-Rules:
-- Be direct and specific — no generic advice
-- If the PBI is a Bug, skip "Suggested Acceptance Criteria" and "Development Plan"; focus on reproduction quality, root cause hypotheses, and fix tasks
-- Do not repeat the PBI title or description back verbatim — reference it, don't copy it
-- If something looks good, say so briefly — don't pad with praise`;
 }
 
 function formatWorkItemForPrompt(wi) {
@@ -593,25 +558,6 @@ async function requestFilesFromClaude(wi, workspace) {
 // ---------------------------------------------------------------------------
 // Claude invocation
 // ---------------------------------------------------------------------------
-async function generateViaCLI(systemPrompt, userPrompt) {
-  const { execSync } = await import("child_process");
-  const os = await import("os");
-
-  const tmpFile = path.join(os.tmpdir(), `refine-prompt-${Date.now()}.txt`);
-  fs.writeFileSync(tmpFile, `${systemPrompt}\n\n---\n\n${userPrompt}`, "utf8");
-
-  try {
-    const result = execSync(`cat "${tmpFile}" | claude -p --dangerously-skip-permissions`, {
-      encoding: "utf8",
-      maxBuffer: 10 * 1024 * 1024,
-      timeout: 5 * 60 * 1000,
-    });
-    return result.trim();
-  } finally {
-    try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
-  }
-}
-
 async function generateViaAPI(systemPrompt, userPrompt) {
   const apiKey = getSecret("ANTHROPIC_API_KEY");
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY not found");
@@ -638,7 +584,7 @@ async function generateViaAPI(systemPrompt, userPrompt) {
 
 async function runClaude(systemPrompt, userPrompt) {
   return GENERATION_MODE === "claude-code"
-    ? generateViaCLI(systemPrompt, userPrompt)
+    ? generateViaCLI(systemPrompt, userPrompt, "refine-prompt")
     : generateViaAPI(systemPrompt, userPrompt);
 }
 

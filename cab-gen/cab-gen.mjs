@@ -20,6 +20,7 @@
  */
 
 import fs from "fs";
+import { generateViaCLI } from "../lib/claude-invoke.mjs";
 
 // ---------------------------------------------------------------------------
 // .devagent config reader
@@ -661,30 +662,9 @@ async function generateCabDocument(promptText, product, version) {
     promptText;
 
   if (GENERATION_MODE === "claude-code") {
-    return generateViaCLI(systemPrompt, userPrompt);
+    return generateViaCLI(systemPrompt, userPrompt, "cab-prompt");
   } else {
     return generateViaAPI(systemPrompt, userPrompt);
-  }
-}
-
-async function generateViaCLI(systemPrompt, userPrompt) {
-  const { execSync } = await import("child_process");
-  const os = await import("os");
-  const path = await import("path");
-
-  // Write full prompt to a temp file — avoids any shell escaping issues
-  const tmpFile = path.join(os.tmpdir(), `cab-prompt-${Date.now()}.txt`);
-  fs.writeFileSync(tmpFile, `${systemPrompt}\n\n---\n\n${userPrompt}`, "utf8");
-
-  try {
-    const result = execSync(`cat "${tmpFile}" | claude -p --dangerously-skip-permissions`, {
-      encoding: "utf8",
-      maxBuffer: 10 * 1024 * 1024,
-      timeout: 5 * 60 * 1000, // 5 min timeout
-    });
-    return result.trim();
-  } finally {
-    try { fs.unlinkSync(tmpFile); } catch { /* ignore cleanup errors */ }
   }
 }
 
@@ -787,7 +767,7 @@ ${promptText}
 --- END CONTEXT ---`;
 
   if (GENERATION_MODE === "claude-code") {
-    return generateViaCLI(systemPrompt, userPrompt);
+    return generateViaCLI(systemPrompt, userPrompt, "cab-prompt");
   } else {
     return generateViaAPI(systemPrompt, userPrompt);
   }
@@ -914,7 +894,7 @@ async function generateReleaseNotes(promptText, product, version, cabContent = n
     sourceBlock;
 
   if (GENERATION_MODE === "claude-code") {
-    return generateViaCLI(systemPrompt, userPrompt);
+    return generateViaCLI(systemPrompt, userPrompt, "cab-prompt");
   } else {
     return generateViaAPI(systemPrompt, userPrompt);
   }
@@ -946,7 +926,7 @@ async function generateNewSections(newWorkItems, prContextMap, product, version)
     `PBIs to document:\n\n${promptText}`;
 
   if (GENERATION_MODE === "claude-code") {
-    return generateViaCLI(systemPrompt, userPrompt);
+    return generateViaCLI(systemPrompt, userPrompt, "cab-prompt");
   } else {
     return generateViaAPI(systemPrompt, userPrompt);
   }

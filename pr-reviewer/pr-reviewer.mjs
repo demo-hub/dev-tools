@@ -426,7 +426,7 @@ async function main() {
 
     if (lastBotReview) {
       const since = new Date(lastBotReview.submittedAt);
-      const commits = fetchCommits(pr.repo, pr.number);
+      const commits = await fetchCommits(pr.repo, pr.number);
       const newCommits = commits.filter(c => new Date(c.committedDate || c.authoredDate) > since);
       newCommitCount = newCommits.length;
 
@@ -441,11 +441,11 @@ async function main() {
       const firstNewSha = newCommits[newCommits.length - 1].oid;
       const firstNewIdx = allShas.indexOf(firstNewSha);
       const baseSha = firstNewIdx > 0 ? allShas[firstNewIdx - 1] : allShas[0];
-      diff = fetchCommitRangeDiff(pr.repo, baseSha, headSha);
+      diff = await fetchCommitRangeDiff(pr.repo, baseSha, headSha);
       deltaInfo = `${newCommitCount} new commit${newCommitCount > 1 ? 's' : ''} since ${ageText(lastBotReview.submittedAt)}`;
     } else {
       process.stdout.write(`${D}[${i + 1}/${prs.length}] Fetching diff: ${pr.title.slice(0, 47)}…${R}\r`);
-      diff = fetchDiff(pr.repo, pr.number);
+      diff = await fetchDiff(pr.repo, pr.number);
     }
 
     // Pre-check: ADO link
