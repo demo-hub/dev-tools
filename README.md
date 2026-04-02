@@ -1,6 +1,6 @@
 # universo-dev-tools
 
-AI-powered developer automation scripts for the **IT Channels** team (SFS-IT / SFSCore).
+AI-powered developer automation scripts for Azure DevOps + GitHub teams.
 
 All tools are Node.js 18+ ESM scripts with **zero npm dependencies**. They rely on [Claude Code](https://docs.anthropic.com/en/docs/claude-code) for AI inference — no `ANTHROPIC_API_KEY` needed in most cases.
 
@@ -36,7 +36,7 @@ claude --version    # any version
 
 ```bash
 # 1. Clone
-git clone git@github.com:UniversoOrg/universo-dev-tools.git
+git clone git@github.com:YOUR_GITHUB_ORG/universo-dev-tools.git
 cd universo-dev-tools
 
 # 2. Run the setup script
@@ -55,9 +55,9 @@ cp .pr-reviewer.example .pr-reviewer
 ### `.devagent` — shared by `agent.mjs` and `refine.mjs`
 
 ```ini
-ADO_ORG=SFS-IT
-ADO_PROJECT=SFSCore
-ADO_TEAM=IT Channels
+ADO_ORG=YOUR_ADO_ORG
+ADO_PROJECT=YOUR_ADO_PROJECT
+ADO_TEAM=YOUR_TEAM_NAME
 ADO_PAT=<your-ado-personal-access-token>
 ADO_STACK=.NET 8, React Native, Azure
 ADO_BASE_BRANCH=main
@@ -71,7 +71,7 @@ Scopes required for `ADO_PAT`: **Work Items (Read & Write)**, **Code (Read)**.
 ```ini
 GH_TOKEN=<your-github-personal-access-token>
 GH_USER=<your-github-username>
-REPOS=UniversoOrg/app-universo-backend,UniversoOrg/app-universo-mobile   # optional filter
+REPOS=YOUR_GITHUB_ORG/your-backend-repo,YOUR_GITHUB_ORG/your-mobile-repo   # optional filter
 ```
 
 Scope required for `GH_TOKEN`: **repo** (full).

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * pr-reviewer.mjs — Autonomous GitHub PR reviewer
- * IT Channels / SFS-IT · v3
+ * v3
  *
  * Usage:
  *   node pr-reviewer.mjs              # review all PRs awaiting your review
@@ -47,19 +47,16 @@ function ask(question) {
 }
 
 async function editReview(review) {
-  console.log(`
-  Editing summary (press Enter twice to finish):`);
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  let lines = [], lastEmpty = false;
-  await new Promise(resolve => {
-    rl.on('line', line => {
-      if (line === '' && lastEmpty) { rl.close(); resolve(); return; }
-      lastEmpty = line === '';
-      lines.push(line);
-    });
-  });
-  const newSummary = lines.join('\n').trim();
-  return newSummary ? { ...review, summary: newSummary } : review;
+  const editor = process.env.EDITOR || process.env.VISUAL || 'nano';
+  const tmpFile = join(tmpdir(), `.pr-reviewer-edit-${Date.now()}.txt`);
+  writeFileSync(tmpFile, review.summary, 'utf8');
+  try {
+    execSync(`${editor} "${tmpFile}"`, { stdio: 'inherit' });
+    const edited = readFileSync(tmpFile, 'utf8').trim();
+    return edited && edited !== review.summary ? { ...review, summary: edited } : review;
+  } finally {
+    try { unlinkSync(tmpFile); } catch {}
+  }
 }
 const DRY_RUN = process.argv.includes('--dry-run');
 const DEBUG   = process.argv.includes('--debug') || process.env.PR_REVIEWER_DEBUG === '1';
@@ -170,6 +167,13 @@ function getLastBotReview(prDetail) {
   return bot.sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt))[0];
 }
 
+function postPRComment(repo, number, body) {
+  try {
+    ghExec(`pr comment ${number} -R ${repo} --body ${JSON.stringify(body)}`);
+    return true;
+  } catch { return false; }
+}
+
 function postReview(repo, number, headSha, review) {
   const body = `${BOT_MARKER}\n${review.summary}`;
   const comments = (review.inline_comments || [])
@@ -259,7 +263,7 @@ Expo: Expo SDK preferred. SSR-safe shared layers.`;
   return `You are an autonomous code reviewer. Apply the team's exact guidelines.
 
 === STACK & TEAM CONTEXT ===
-React Native + Expo + Next.js + .NET 8 + Azure. Git Flow. ADO org: SFS-IT, project: SFSCore, team: IT Channels.
+React Native + Expo + Next.js + .NET 8 + Azure. Git Flow.
 Products: App Universo, USP, Personal Loans, Uniportal.
 X-Api-Version header required on all public endpoints. [Deprecated] attribute on deprecated endpoints.
 TDD on backend. Backward-compatible contracts. Feature toggles for risky changes. Additive migrations only.
@@ -296,11 +300,22 @@ ${isFlagged
   : 'Low-risk. APPROVE if good, REQUEST_CHANGES if real issues.'}
 ${isReReview ? 'Start summary with "Re-review:".' : ''}
 Prefix inline comments: [issue], [suggestion], [nit], or [question].
+When you can propose a concrete fix, include a GitHub suggestion block immediately after the prefix line so the author can apply it with one click:
+
+[issue] Brief explanation of the problem.
+\`\`\`suggestion
+corrected code here (exact replacement for the flagged line(s))
+\`\`\`
+
+Use suggestion blocks for: wrong type, missing null guard, incorrect async pattern, style violations with a clear fix. Skip them when the fix requires understanding broader context or multiple files.
 
 Respond ONLY with valid JSON, no markdown, no backticks:
-{"verdict":"${isFlagged ? 'needs-review' : 'autonomous'}","action":"${isFlagged ? 'COMMENT' : 'APPROVE or REQUEST_CHANGES'}","summary":"2-3 sentences.","inline_comments":[{"path":"file","line":42,"body":"[issue] ..."}],"tags":[]}
+{"verdict":"${isFlagged ? 'needs-review' : 'autonomous'}","action":"${isFlagged ? 'COMMENT' : 'APPROVE or REQUEST_CHANGES'}","summary":"2-3 sentences focused on what the code does and why it matters. Do not mention diff size, truncation, or token limits.","inline_comments":[{"path":"file","line":42,"body":"[issue] ..."}],"tags":[]}
 
-inline_comments: real issues only, max 6, [] if none.
+inline_comments rules:
+- Only for issues tied to a SPECIFIC line of code in a specific file.
+- NEVER use inline_comments for PR-level concerns (missing description, PR size, missing ADO link, missing tests in general, broad architectural feedback). Those belong in the summary.
+- Max 6. Return [] if no genuine line-level issues exist.
 tags: up to 3 from: risk, bug, security, missing-tests, style, trivial
 line: integer line number in new file.`;
 }
@@ -355,7 +370,7 @@ async function main() {
   const repos = cfg.REPOS ? cfg.REPOS.split(',').map(r => r.trim()).filter(Boolean) : [];
 
   console.log();
-  console.log(`${B}PR Reviewer${R} ${D}IT Channels · SFS-IT${R}${DRY_RUN ? ` ${YEL}[dry run]${R}` : ''}`);
+  console.log(`${B}PR Reviewer${R}${DRY_RUN ? ` ${YEL}[dry run]${R}` : ''}`);
   hr();
 
   // Check dependencies
@@ -457,18 +472,35 @@ async function main() {
       review.summary = `Review failed: ${e.message}`;
     }
 
+    // Strip PR-level concerns Claude incorrectly placed as inline comments
+    const PR_LEVEL_PATTERNS = [
+      /missing.*ADO.*link/i,
+      /AB#.*description/i,
+      /no pr description/i,
+      /missing.*description/i,
+      /PR.*lines.*limit/i,
+      /400.line/i,
+      /split.*PR/i,
+      /PR.*too large/i,
+    ];
+    if (review.inline_comments?.length) {
+      const stripped = [];
+      for (const c of review.inline_comments) {
+        if (PR_LEVEL_PATTERNS.some(p => p.test(c.body))) {
+          // Absorb into summary only if not already covered
+          if (!review.summary.includes(c.body.slice(0, 40))) {
+            review._extra_summary = (review._extra_summary || '') + ' ' + c.body;
+          }
+        } else {
+          stripped.push(c);
+        }
+      }
+      review.inline_comments = stripped;
+    }
+
     // Guarantee ADO link comment is present when link is missing
     if (detail._missing_ado_link) {
-      const alreadyFlagged = review.inline_comments?.some(c => /AB#/i.test(c.body));
-      if (!alreadyFlagged) {
-        review.inline_comments = [
-          { path: '', line: null, body: '[issue] Missing ADO work item link — add AB#{{id}} to the PR description to link it to the Azure Boards ticket.' },
-          ...(review.inline_comments || []),
-        ];
-      }
-      if (!review.summary.includes('AB#')) {
-        review.summary = `Missing ADO link (AB#id required in description). ${review.summary}`;
-      }
+      detail._ado_comment = '[issue] Missing ADO work item link — add AB#id to the PR description to link it to the Azure Boards ticket.';
     }
 
     process.stdout.write(' '.repeat(70) + '\r');
@@ -496,6 +528,7 @@ async function main() {
           console.log(review.posted
             ? `  ${D}↑ posted to GitHub${R}`
             : `  ${YEL}⚠ Could not post to GitHub${R}`);
+          if (review.posted && detail._ado_comment) postPRComment(pr.repo, pr.number, detail._ado_comment);
         } else {
           console.log(`  ${D}skipped${R}`);
         }

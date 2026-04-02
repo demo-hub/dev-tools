@@ -1,6 +1,10 @@
 # Credentials — never commit these
 .devagent
 .pr-reviewer
+agent/.devagent
+refine/.devagent
+cab-gen/.devagent
+pr-reviewer/.pr-reviewer
 
 # Refinement output reports
 refine/refine-*.md

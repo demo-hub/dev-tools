@@ -15,6 +15,7 @@
  *     PAT scopes required: Work Items Read, Code Read, Wiki Read/Write
  *   - Either: `claude` CLI installed (Claude Code subscription)
  *   - Or:     ANTHROPIC_API_KEY in .devagent — set GENERATION_MODE = "api"
+ *   - `gh` CLI installed and authenticated (for GitHub PR fetching)
  *   - Node 18+ (uses native fetch)
  */
 
@@ -45,9 +46,9 @@ function getSecret(key) { return DEVAGENT[key] || process.env[key] || null; }
 // CONFIG — fill in once
 // ---------------------------------------------------------------------------
 const ADO = {
-  org: "SFS-IT",
-  project: "SFSCore",
-  wikiIdentifier: "SFSCore.wiki", // ADO > Project Settings > Wiki
+  org: process.env.ADO_ORG || "YOUR_ADO_ORG",
+  project: process.env.ADO_PROJECT || "YOUR_ADO_PROJECT",
+  wikiIdentifier: (process.env.ADO_PROJECT || "YOUR_ADO_PROJECT") + ".wiki", // ADO > Project Settings > Wiki
 };
 
 const PRODUCTS = {
@@ -81,6 +82,13 @@ const PRODUCTS = {
     name: "Onboarding",
     wikiBasePath: "/Knowledge Base/Onboarding",
   },
+};
+
+// ---------------------------------------------------------------------------
+// GitHub config — org name for gh CLI calls
+// ---------------------------------------------------------------------------
+const GITHUB = {
+  org: process.env.GITHUB_ORG || "YOUR_GITHUB_ORG", // ← your GitHub org name
 };
 
 // ---------------------------------------------------------------------------
@@ -351,6 +359,7 @@ async function fetchTaggedPBIs(tag) {
               WHERE [System.TeamProject] = '${ADO.project}'
               AND [System.Tags] CONTAINS '${tag}'
               AND [System.WorkItemType] IN ('Product Backlog Item', 'Bug', 'Task', 'Incident')
+              AND [System.State] NOT IN ('Done', 'Closed', 'Removed', 'Resolved')
               ORDER BY [System.ChangedDate] DESC`,
     },
   });
@@ -396,22 +405,43 @@ async function fetchTaggedPBIs(tag) {
 }
 
 // ---------------------------------------------------------------------------
-// PR extraction
+// PR extraction — supports both ADO Git and GitHub PRs
 // ---------------------------------------------------------------------------
-function parsePRLink(url) {
+
+// ADO artifact link: vstfs:///Git/PullRequestId/<projectId>/<repoId>/<prId>
+function parseAdoPRLink(url) {
   try {
     const decoded = decodeURIComponent(url);
     const match = decoded.match(/PullRequestId\/([^/]+)\/([^/]+)\/(\d+)$/);
-    if (match) return { repoId: match[2], prId: parseInt(match[3], 10) };
+    if (match) return { source: "ado", repoId: match[2], prId: parseInt(match[3], 10) };
+  } catch { /* ignore */ }
+  return null;
+}
+
+// GitHub external link: https://github.com/<org>/<repo>/pull/<prId>
+function parseGitHubPRLink(url) {
+  try {
+    const match = url.match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
+    if (match) return { source: "github", org: match[1], repo: match[2], prId: parseInt(match[3], 10) };
   } catch { /* ignore */ }
   return null;
 }
 
 function extractPRLinksFromWorkItem(workItem) {
   return (workItem.relations ?? [])
-    .filter((r) => r.rel === "ArtifactLink" && r.url?.includes("PullRequestId"))
-    .map((r) => parsePRLink(r.url))
-    .filter(Boolean);
+    .flatMap((r) => {
+      // ADO Git PR artifact links
+      if (r.rel === "ArtifactLink" && r.url?.includes("PullRequestId")) {
+        const link = parseAdoPRLink(r.url);
+        return link ? [link] : [];
+      }
+      // GitHub PR external links (ADO stores these as Hyperlink or GitHub link relations)
+      if ((r.rel === "Hyperlink" || r.rel === "GitHub Pull Request" || r.rel === "GitHub.PullRequest") && r.url?.includes("github.com") && r.url?.includes("/pull/")) {
+        const link = parseGitHubPRLink(r.url);
+        return link ? [link] : [];
+      }
+      return [];
+    });
 }
 
 function shouldSkipFile(filePath) {
@@ -476,18 +506,91 @@ async function fetchPRContext(repoId, prId) {
   return context;
 }
 
+// ---------------------------------------------------------------------------
+// GitHub PR fetch via gh CLI
+// ---------------------------------------------------------------------------
+async function fetchGitHubPRContext(org, repo, prId) {
+  const { execSync } = await import("child_process");
+
+  const prJson = execSync(
+    `gh api repos/${org}/${repo}/pulls/${prId}`,
+    { encoding: "utf8", timeout: 30000 }
+  );
+  const pr = JSON.parse(prJson);
+
+  if (pr.state !== "closed" || !pr.merged_at) return null;
+
+  const context = {
+    prId,
+    source: "github",
+    repoName: repo,
+    title: pr.title ?? "",
+    description: pr.body ?? "",
+    mergedBy: pr.merged_by?.login ?? "unknown",
+    mergeDate: pr.merged_at?.split("T")[0] ?? "",
+    files: [],
+    diffSummary: "",
+  };
+
+  // Fetch changed files
+  const filesJson = execSync(
+    `gh api repos/${org}/${repo}/pulls/${prId}/files --paginate`,
+    { encoding: "utf8", timeout: 30000 }
+  );
+  const allFiles = JSON.parse(filesJson)
+    .filter((f) => !shouldSkipFile(f.filename))
+    .sort((a, b) => priorityScore(a.filename) - priorityScore(b.filename))
+    .slice(0, DIFF.maxFiles);
+
+  context.files = allFiles.map((f) => `${f.status.padEnd(6)} ${f.filename}`);
+
+  // Fetch file contents for priority files
+  let totalBytes = 0;
+  const diffParts = [];
+
+  for (const file of allFiles) {
+    if (totalBytes >= DIFF.maxBytesTotal) break;
+    if (file.status === "removed" || !file.contents_url) continue;
+
+    try {
+      const fileJson = execSync(
+        `gh api "${file.contents_url.replace("https://api.github.com/", "")}"`,
+        { encoding: "utf8", timeout: 15000 }
+      );
+      const fileData = JSON.parse(fileJson);
+      if (fileData.encoding !== "base64") continue;
+
+      let fileContent = Buffer.from(fileData.content.replace(/\n/g, ""), "base64").toString("utf8");
+      if (Buffer.byteLength(fileContent) > DIFF.maxBytesPerFile) {
+        fileContent = fileContent.slice(0, DIFF.maxBytesPerFile) + "\n... (truncated)";
+      }
+      totalBytes += Buffer.byteLength(fileContent);
+      diffParts.push(`### ${file.status.toUpperCase()}: ${file.filename}\n\`\`\`\n${fileContent}\n\`\`\``);
+    } catch { /* skip files that fail */ }
+  }
+
+  context.diffSummary = diffParts.join("\n\n");
+  return context;
+}
+
 async function fetchAllPRContextForWorkItem(workItem) {
   const links = extractPRLinksFromWorkItem(workItem);
   if (links.length === 0) return [];
 
   const results = [];
-  for (const { repoId, prId } of links) {
+  for (const link of links) {
     try {
-      console.log(`   📎 Fetching PR #${prId}...`);
-      const ctx = await fetchPRContext(repoId, prId);
-      if (ctx) results.push(ctx);
+      if (link.source === "github") {
+        console.log(`   📎 Fetching GitHub PR #${link.prId} (${link.repo})...`);
+        const ctx = await fetchGitHubPRContext(link.org, link.repo, link.prId);
+        if (ctx) results.push(ctx);
+      } else {
+        console.log(`   📎 Fetching ADO PR #${link.prId}...`);
+        const ctx = await fetchPRContext(link.repoId, link.prId);
+        if (ctx) results.push(ctx);
+      }
     } catch (err) {
-      console.log(`   ⚠️  Could not fetch PR #${prId}: ${err.message}`);
+      console.log(`   ⚠️  Could not fetch PR #${link.prId}: ${err.message}`);
     }
   }
   return results;
@@ -794,14 +897,21 @@ Regras para as lojas:
 - Emojis: 🆕 nova funcionalidade | ✨ melhoria | 🔧 fix técnico com impacto | 🐛 bug visível | 📄 documentos | 🔔 notificações | 💬 chat | 💳 cartão`;
 }
 
-async function generateReleaseNotes(promptText, product, version) {
+async function generateReleaseNotes(promptText, product, version, cabContent = null) {
   console.log("🤖 Generating release notes via Claude...");
 
   const systemPrompt = buildReleaseNotesPrompt(product.name, version);
+
+  const sourceBlock = cabContent
+    ? `O seguinte CAB document foi editado manualmente e é a fonte de verdade para esta release.\n` +
+      `Usa o seu conteúdo como base — especialmente descrições de funcionalidades, comportamentos e correções.\n\n` +
+      `--- CAB DOCUMENT ---\n${cabContent}\n--- END CAB DOCUMENT ---`
+    : `Os seguintes PBIs fazem parte desta versão (tag "${product.tag}"), ` +
+      `com contexto de PRs e código:\n\n${promptText}`;
+
   const userPrompt =
     `Gera as release notes e o texto para as lojas para ${product.name} versão ${version}.\n\n` +
-    `Os seguintes PBIs fazem parte desta versão (tag "${product.tag}"), ` +
-    `com contexto de PRs e código:\n\n${promptText}`;
+    sourceBlock;
 
   if (GENERATION_MODE === "claude-code") {
     return generateViaCLI(systemPrompt, userPrompt);
@@ -926,22 +1036,32 @@ async function main() {
 
     console.log(`\n📝 Generating release notes — ${product.name} ${version}\n`);
 
-    const workItems = await fetchTaggedPBIs(product.tag);
-    if (workItems.length === 0) {
-      console.log(`No tagged PBIs found. Tag PBIs with "${product.tag}" and re-run.`);
-      process.exit(0);
+    // Prefer the edited CAB draft as source of truth if it exists
+    let promptText = null;
+    let cabContent = null;
+
+    if (fs.existsSync(draftPath)) {
+      cabContent = fs.readFileSync(draftPath, "utf8");
+      console.log(`📄 Using CAB draft as source: ${draftPath}`);
+    } else {
+      console.log(`ℹ️  No CAB draft found at ${draftPath} — fetching from ADO instead`);
+      const workItems = await fetchTaggedPBIs(product.tag);
+      if (workItems.length === 0) {
+        console.log(`No tagged PBIs found. Tag PBIs with "${product.tag}" and re-run.`);
+        process.exit(0);
+      }
+
+      console.log("\n🔗 Fetching linked PR context...");
+      const prContextMap = {};
+      for (const wi of workItems) {
+        console.log(`  PBI ${wi.id}: ${wi.fields["System.Title"]}`);
+        prContextMap[wi.id] = await fetchAllPRContextForWorkItem(wi);
+        console.log(`   → ${prContextMap[wi.id].length} merged PR(s) found`);
+      }
+      promptText = formatWorkItemsForPrompt(workItems, prContextMap);
     }
 
-    console.log("\n🔗 Fetching linked PR context...");
-    const prContextMap = {};
-    for (const wi of workItems) {
-      console.log(`  PBI ${wi.id}: ${wi.fields["System.Title"]}`);
-      prContextMap[wi.id] = await fetchAllPRContextForWorkItem(wi);
-      console.log(`   → ${prContextMap[wi.id].length} merged PR(s) found`);
-    }
-
-    const promptText = formatWorkItemsForPrompt(workItems, prContextMap);
-    const output = await generateReleaseNotes(promptText, product, version);
+    const output = await generateReleaseNotes(promptText, product, version, cabContent);
     if (!output) throw new Error("Claude returned an empty response.");
 
     // Split into email and store copy

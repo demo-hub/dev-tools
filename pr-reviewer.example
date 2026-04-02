@@ -11,5 +11,5 @@ GH_TOKEN=
 GH_USER=
 
 # Optional: comma-separated list of repos to filter (leave blank for all)
-# Example: UniversoOrg/app-universo-backend,UniversoOrg/app-universo-mobile
+# Example: YOUR_GITHUB_ORG/your-backend-repo,YOUR_GITHUB_ORG/your-mobile-repo
 REPOS=

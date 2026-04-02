@@ -2,13 +2,13 @@
 # Copy this file to .devagent and fill in your values.
 # This file is .gitignored — never commit it.
 
-ADO_ORG=SFS-IT
-ADO_PROJECT=SFSCore
-ADO_TEAM=IT Channels
+ADO_ORG=YOUR_ADO_ORG
+ADO_PROJECT=YOUR_ADO_PROJECT
+ADO_TEAM=YOUR_TEAM_NAME
 
 # Personal Access Token
 # Required scopes: Work Items (Read & Write), Code (Read)
-# https://dev.azure.com/SFS-IT/_usersSettings/tokens
+# https://dev.azure.com/YOUR_ADO_ORG/_usersSettings/tokens
 ADO_PAT=
 
 # Stack description injected into agent prompts

@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  syntax-check:
+    name: Syntax check (Node ${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [18, 20]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Check .mjs syntax
+        run: |
+          node --check agent/agent.mjs
+          node --check refine/refine.mjs
+          node --check cab-gen/cab-gen.mjs
+          node --check pr-reviewer/pr-reviewer.mjs
+
+      - name: Verify credential files are not tracked
+        run: |
+          git ls-files --error-unmatch .devagent 2>/dev/null && echo "ERROR: .devagent is tracked" && exit 1 || true
+          git ls-files --error-unmatch .pr-reviewer 2>/dev/null && echo "ERROR: .pr-reviewer is tracked" && exit 1 || true
+          echo "Credential files are not tracked — OK"

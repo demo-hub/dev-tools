@@ -1,6 +1,6 @@
 # CAB Generator — `cab-gen.mjs`
 
-Generates Change Advisory Board (CAB) documentation from ADO release work items, and publishes to the SFSCore wiki.
+Generates Change Advisory Board (CAB) documentation from ADO release work items, and publishes to the ADO wiki.
 
 ---
 

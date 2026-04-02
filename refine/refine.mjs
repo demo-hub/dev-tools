@@ -48,8 +48,8 @@ function getSecret(key) { return DEVAGENT[key] || process.env[key] || null; }
 // CONFIG
 // ---------------------------------------------------------------------------
 const ADO = {
-  org: "SFS-IT",
-  project: "SFSCore",
+  org: process.env.ADO_ORG || "YOUR_ADO_ORG",
+  project: process.env.ADO_PROJECT || "YOUR_ADO_PROJECT",
 };
 
 const PRODUCTS = {
