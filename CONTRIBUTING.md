@@ -1,4 +1,4 @@
-# Contributing to universo-dev-tools
+# Contributing to dev-tools
 
 ## Prerequisites
 
@@ -13,8 +13,8 @@ Before contributing, ensure you have:
 ## Local setup
 
 ```bash
-git clone https://github.com/YOUR_GITHUB_ORG/universo-dev-tools.git
-cd universo-dev-tools
+git clone https://github.com/YOUR_GITHUB_ORG/dev-tools.git
+cd dev-tools
 
 # Verify dependencies
 ./setup.sh

@@ -1,4 +1,4 @@
-# universo-dev-tools
+# dev-tools
 
 AI-powered developer automation scripts for Azure DevOps + GitHub teams.
 
@@ -36,8 +36,8 @@ claude --version    # any version
 
 ```bash
 # 1. Clone
-git clone git@github.com:YOUR_GITHUB_ORG/universo-dev-tools.git
-cd universo-dev-tools
+git clone git@github.com:YOUR_GITHUB_ORG/dev-tools.git
+cd dev-tools
 
 # 2. Run the setup script
 chmod +x setup.sh && ./setup.sh
@@ -124,7 +124,7 @@ node pr-reviewer.mjs --dry-run  # fetch + analyse, skip posting to GitHub
 ## Repo structure
 
 ```
-universo-dev-tools/
+dev-tools/
 ├── agent/
 │   ├── agent.mjs
 │   └── README.md
